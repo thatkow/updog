@@ -93,12 +93,34 @@ flexdog <- function(refvec,
                     p2ref       = NULL,
                     p2size      = NULL,
                     snpname     = NULL,
-                    bias_init   = exp(c(-1, -0.5, 0, 0.5, 1)),
+                    bias_init   = exp(c(-1, 0, 1)),
                     verbose     = TRUE,
                     prior_vec   = NULL,
+                    benchmark_log = FALSE,
                     ...) {
   assertthat::assert_that(all(bias_init > 0))
   model <- match.arg(model)
+
+  log_start <- Sys.time()
+  timings_file <- "timings.log"
+  flex_log <- function(...) {
+    if (!benchmark_log) {
+      return(invisible(NULL))
+    }
+    current_time <- Sys.time()
+    elapsed <- round(as.numeric(difftime(current_time, log_start, units = "secs")), 3)
+    snp_label <- if (is.null(snpname)) "NA" else snpname
+    line <- sprintf("[%s] [snp=%s] (+%0.3fs) %s",
+                    format(current_time, "%Y-%m-%d %H:%M:%OS3"),
+                    snp_label,
+                    elapsed,
+                    paste0(..., collapse = ""))
+    message(line)
+    cat(paste0(line, "\n"), file = timings_file, append = TRUE)
+  }
+  flex_log("flexdog() invoked with model=", model,
+           "; bias_init count=", length(bias_init),
+           "; individuals=", length(refvec), ".")
 
   if (verbose) {
     if ((length(refvec) < (10 * (ploidy + 1))) & (model == "flex")) {
@@ -110,6 +132,9 @@ flexdog <- function(refvec,
   fout <- list()
   fout$llike <- -Inf
   for (bias_index in seq_along(bias_init)) {
+    fit_start <- Sys.time()
+    flex_log("Starting bias candidate ", bias_index, "/", length(bias_init),
+             " (bias=", signif(bias_init[bias_index], 6), ").")
     if (verbose) {
       cat("         Fit:", bias_index, "of", length(bias_init), "\n")
       cat("Initial Bias:", bias_init[bias_index], "\n")
@@ -127,11 +152,17 @@ flexdog <- function(refvec,
                              bias      = bias_init[bias_index],
                              verbose   = FALSE,
                              prior_vec = prior_vec,
+                             benchmark_log = benchmark_log,
                              ...)
 
     if (verbose) {
       cat("Log-Likelihood:", fcurrent$llike, "\n")
     }
+
+    fit_elapsed <- round(as.numeric(difftime(Sys.time(), fit_start, units = "secs")), 3)
+    flex_log("Finished bias candidate ", bias_index,
+             " with logLik=", signif(fcurrent$llike, 8),
+             " in ", fit_elapsed, "s.")
 
     if (fcurrent$llike > fout$llike) {
       fout <- fcurrent
@@ -147,6 +178,11 @@ flexdog <- function(refvec,
   if (verbose) {
     cat("Done!\n")
   }
+  total_duration <- round(as.numeric(difftime(Sys.time(), log_start, units = "secs")), 3)
+  flex_log("flexdog() complete. best logLik=", signif(fout$llike, 8),
+           "; num_iter=", fout$num_iter,
+           "; prop_mis=", signif(fout$prop_mis, 6),
+           "; total duration=", total_duration, "s.")
 
   return(fout)
 }
@@ -492,6 +528,7 @@ flexdog_full <- function(refvec,
                                          "uniform",
                                          "custom"),
                          verbose     = TRUE,
+                         benchmark_log = FALSE,
                          mean_bias   = 0,
                          var_bias    = 0.7 ^ 2,
                          mean_seq    = -4.7,
@@ -517,6 +554,27 @@ flexdog_full <- function(refvec,
 
   ## Check input -----------------------------------------------------
   model <- match.arg(model)
+
+  full_log_start <- Sys.time()
+  timings_file <- "timings.log"
+  full_log <- function(...) {
+    if (!benchmark_log) {
+      return(invisible(NULL))
+    }
+    current_time <- Sys.time()
+    elapsed <- round(as.numeric(difftime(current_time, full_log_start, units = "secs")), 3)
+    snp_label <- if (is.null(snpname)) "NA" else snpname
+    line <- sprintf("[%s] [snp=%s] [flexdog_full] (+%0.3fs) %s",
+                    format(current_time, "%Y-%m-%d %H:%M:%OS3"),
+                    snp_label,
+                    elapsed,
+                    paste0(..., collapse = ""))
+    message(line)
+    cat(paste0(line, "\n"), file = timings_file, append = TRUE)
+  }
+  full_log("Starting flexdog_full() with model=", model,
+           "; n individuals=", length(refvec),
+           "; ploidy=", ploidy, ".")
   if (model == "uniform") {
     warning(paste0("flexdog: Using model = 'uniform'",
                    "\nis almost always a bad idea.",
@@ -546,6 +604,7 @@ flexdog_full <- function(refvec,
   assertthat::assert_that(bias > 0)
   assertthat::assert_that(od >= 0, od <= 1)
   assertthat::assert_that(is.logical(verbose))
+  assertthat::assert_that(is.logical(benchmark_log))
   assertthat::are_equal(ploidy %% 1, 0)
   assertthat::assert_that(ploidy > 0)
   assertthat::assert_that(tol > 0)
@@ -595,6 +654,8 @@ flexdog_full <- function(refvec,
     stopifnot(length(snpname) == 1)
   }
 
+  full_log("Input checks complete.")
+
   ## Preferential pairing only supported for tetraploids right now ------------
   if ((model == "f1pp" | model == "s1pp") & ploidy != 4) {
     stop("Currently, `model = \"f1pp\"` and `model = \"s1pp\"` are only supported when ploidy = 4.")
@@ -607,6 +668,8 @@ flexdog_full <- function(refvec,
   not_na_vec  <- !(is.na(refvec) | is.na(sizevec))
   refvec      <- refvec[not_na_vec]
   sizevec     <- sizevec[not_na_vec]
+  full_log("Missingness filtered: retained ", length(refvec),
+           " / ", length(not_na_vec), " individuals.")
 
   ## Some variables needed to run EM ---------------------------
   control <- list() ## will contain parameters used to update pivec
@@ -655,6 +718,7 @@ flexdog_full <- function(refvec,
   }
   assertthat::are_equal(sum(pivec), 1)
   control$pivec <- pivec
+  full_log("Initialization complete. Starting EM.")
 
   ## Run EM ----------------------------------------
   iter_index  <- 1
@@ -664,6 +728,7 @@ flexdog_full <- function(refvec,
     llike_old <- llike
 
     ## E-step ----------------------
+    t_wik0 <- if (benchmark_log) Sys.time() else NULL
     wik_mat <- get_wik_mat(probk_vec = pivec,
                            refvec    = refvec,
                            sizevec   = sizevec,
@@ -671,8 +736,13 @@ flexdog_full <- function(refvec,
                            seq       = seq,
                            bias      = bias,
                            od = od)
+    if (benchmark_log) {
+      full_log("timing: iter=", iter_index,
+               " get_wik_mat=", round(as.numeric(difftime(Sys.time(), t_wik0, units = "secs")), 3), "s")
+    }
 
     ## Update seq, bias, and od ----
+    t_opt0 <- if (benchmark_log) Sys.time() else NULL
     oout <- stats::optim(par         = c(seq, bias, od),
                          fn          = obj_for_eps,
                          gr          = grad_for_eps,
@@ -680,7 +750,7 @@ flexdog_full <- function(refvec,
                          lower       = rep(boundary_tol, 3),
                          upper       = c(seq_upper, Inf,
                                          1 - boundary_tol),
-                         control     = list(fnscale = -1, maxit = 20),
+                         control     = list(fnscale = -1, maxit = 8),
                          refvec      = refvec,
                          sizevec     = sizevec,
                          ploidy      = ploidy,
@@ -694,6 +764,13 @@ flexdog_full <- function(refvec,
                          update_seq  = update_seq,
                          update_bias = update_bias,
                          update_od   = update_od)
+    if (benchmark_log) {
+      full_log("timing: iter=", iter_index,
+               " optim=", round(as.numeric(difftime(Sys.time(), t_opt0, units = "secs")), 3), "s",
+               " (counts fn=", oout$counts[["function"]],
+               " gr=", oout$counts[["gradient"]], ")")
+    }
+
     seq  <- oout$par[1]
     bias <- oout$par[2]
     od   <- oout$par[3]
@@ -752,6 +829,7 @@ flexdog_full <- function(refvec,
     pivec <- pivec / sum(pivec)
 
     ## Calculate likelihood and update stopping criteria --------------
+    t_ll0 <- if (benchmark_log) Sys.time() else NULL
     llike <- flexdog_obj(probk_vec = pivec,
                          refvec    = refvec,
                          sizevec   = sizevec,
@@ -765,9 +843,22 @@ flexdog_full <- function(refvec,
                          var_seq   = var_seq,
                          mean_od   = mean_od,
                          var_od    = var_od)
+    if (benchmark_log) {
+      full_log("timing: iter=", iter_index,
+               " flexdog_obj=", round(as.numeric(difftime(Sys.time(), t_ll0, units = "secs")), 3), "s")
+    }
 
     err        <- abs(llike - llike_old)
     iter_index <- iter_index + 1
+
+    if (benchmark_log && (iter_index <= 3 || iter_index %% 10 == 0 || err <= tol || iter_index > itermax)) {
+      full_log("EM progress: iter=", iter_index - 1,
+               "; llike=", signif(llike, 8),
+               "; err=", signif(err, 6),
+               "; seq=", signif(seq, 6),
+               "; bias=", signif(bias, 6),
+               "; od=", signif(od, 6), ".")
+    }
 
     if (llike < llike_old - 10 ^ -5) {
       warning(paste0("flexdog: likelihood not increasing.\nDifference is: ",
@@ -851,6 +942,12 @@ flexdog_full <- function(refvec,
                                 ncol = ncol(return_list$genologlike))
   temp[not_na_vec, ]  <- return_list$genologlike
   return_list$genologlike <- temp
+
+  total_duration <- round(as.numeric(difftime(Sys.time(), full_log_start, units = "secs")), 3)
+  full_log("flexdog_full() complete: iter=", iter_index - 1,
+           "; final logLik=", signif(llike, 8),
+           "; prop_mis=", signif(return_list$prop_mis, 6),
+           "; total duration=", total_duration, "s.")
 
   ## Set class to flexdog ---------------------------------------------
   class(return_list) <- "flexdog"
