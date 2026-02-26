@@ -728,6 +728,7 @@ flexdog_full <- function(refvec,
     llike_old <- llike
 
     ## E-step ----------------------
+    t_wik0 <- if (benchmark_log) Sys.time() else NULL
     wik_mat <- get_wik_mat(probk_vec = pivec,
                            refvec    = refvec,
                            sizevec   = sizevec,
@@ -735,8 +736,13 @@ flexdog_full <- function(refvec,
                            seq       = seq,
                            bias      = bias,
                            od = od)
+    if (benchmark_log) {
+      full_log("timing: iter=", iter_index,
+               " get_wik_mat=", round(as.numeric(difftime(Sys.time(), t_wik0, units = "secs")), 3), "s")
+    }
 
     ## Update seq, bias, and od ----
+    t_opt0 <- if (benchmark_log) Sys.time() else NULL
     oout <- stats::optim(par         = c(seq, bias, od),
                          fn          = obj_for_eps,
                          gr          = grad_for_eps,
@@ -758,6 +764,13 @@ flexdog_full <- function(refvec,
                          update_seq  = update_seq,
                          update_bias = update_bias,
                          update_od   = update_od)
+    if (benchmark_log) {
+      full_log("timing: iter=", iter_index,
+               " optim=", round(as.numeric(difftime(Sys.time(), t_opt0, units = "secs")), 3), "s",
+               " (counts fn=", oout$counts[["function"]],
+               " gr=", oout$counts[["gradient"]], ")")
+    }
+
     seq  <- oout$par[1]
     bias <- oout$par[2]
     od   <- oout$par[3]
@@ -816,6 +829,7 @@ flexdog_full <- function(refvec,
     pivec <- pivec / sum(pivec)
 
     ## Calculate likelihood and update stopping criteria --------------
+    t_ll0 <- if (benchmark_log) Sys.time() else NULL
     llike <- flexdog_obj(probk_vec = pivec,
                          refvec    = refvec,
                          sizevec   = sizevec,
@@ -829,6 +843,10 @@ flexdog_full <- function(refvec,
                          var_seq   = var_seq,
                          mean_od   = mean_od,
                          var_od    = var_od)
+    if (benchmark_log) {
+      full_log("timing: iter=", iter_index,
+               " flexdog_obj=", round(as.numeric(difftime(Sys.time(), t_ll0, units = "secs")), 3), "s")
+    }
 
     err        <- abs(llike - llike_old)
     iter_index <- iter_index + 1
