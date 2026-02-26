@@ -492,8 +492,10 @@ multidog <- function(refmat,
   class(retlist) <- "multidog"
 
   cat("done!")
+  total_duration <- round(as.numeric(difftime(Sys.time(), log_start, units = "secs")), 3)
   log_stamp("multidog() complete. snpdf rows=", nrow(retlist$snpdf),
-            "; inddf rows=", nrow(retlist$inddf), ".")
+            "; inddf rows=", nrow(retlist$inddf),
+            "; total duration=", total_duration, "s.")
 
   return(retlist)
 }

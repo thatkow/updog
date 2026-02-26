@@ -175,9 +175,11 @@ flexdog <- function(refvec,
   if (verbose) {
     cat("Done!\n")
   }
+  total_duration <- round(as.numeric(difftime(Sys.time(), log_start, units = "secs")), 3)
   flex_log("flexdog() complete. best logLik=", signif(fout$llike, 8),
            "; num_iter=", fout$num_iter,
-           "; prop_mis=", signif(fout$prop_mis, 6), ".")
+           "; prop_mis=", signif(fout$prop_mis, 6),
+           "; total duration=", total_duration, "s.")
 
   return(fout)
 }
@@ -917,9 +919,11 @@ flexdog_full <- function(refvec,
   temp[not_na_vec, ]  <- return_list$genologlike
   return_list$genologlike <- temp
 
+  total_duration <- round(as.numeric(difftime(Sys.time(), full_log_start, units = "secs")), 3)
   full_log("flexdog_full() complete: iter=", iter_index - 1,
            "; final logLik=", signif(llike, 8),
-           "; prop_mis=", signif(return_list$prop_mis, 6), ".")
+           "; prop_mis=", signif(return_list$prop_mis, 6),
+           "; total duration=", total_duration, "s.")
 
   ## Set class to flexdog ---------------------------------------------
   class(return_list) <- "flexdog"
