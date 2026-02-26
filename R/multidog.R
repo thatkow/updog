@@ -379,6 +379,7 @@ multidog <- function(refmat,
   } else if (nc <= 1) {
     log_stamp("Running in single-worker mode (nc <= 1).")
   }
+  log_stamp("Using dynamic future scheduling with one SNP per chunk (chunk.size=1).")
 
   ## Fit flexdog on all SNPs --------------------------------------------------
   current_snp <- NULL
@@ -397,7 +398,9 @@ multidog <- function(refmat,
                               p2_size       = iterators::iter(p2_sizevec),
                               .export       = c("flexdog"),
                               .combine      = combine_flex,
-                              .multicombine = TRUE) %dorng% {
+                              .multicombine = TRUE,
+                              .options.future = list(chunk.size = 1,
+                                                     scheduling = Inf)) %dorng% {
 
                                 iter_start <- Sys.time()
                                 iter_start_line <- sprintf("[%s] [snp=%s] start flexdog().",
