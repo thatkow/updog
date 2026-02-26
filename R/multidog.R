@@ -223,6 +223,22 @@ multidog <- function(refmat,
                      prior_vec = NULL,
                      ...) {
 
+  log_start <- Sys.time()
+  log_stamp <- function(..., .start = log_start) {
+    current_time <- Sys.time()
+    elapsed <- round(as.numeric(difftime(current_time, .start, units = "secs")), 3)
+    message(sprintf("[%s] (+%0.3fs) %s",
+                    format(current_time, "%Y-%m-%d %H:%M:%OS3"),
+                    elapsed,
+                    paste0(..., collapse = "")))
+  }
+
+  log_stamp("multidog() invoked.")
+  log_stamp("Input summary: ",
+            nrow(refmat), " SNPs x ", ncol(refmat), " individuals; ploidy=", ploidy,
+            "; model=", model,
+            "; nc=", ifelse(is.na(nc), "NA", as.character(nc)), ".")
+
   cat(paste0(  "    |                                   *.#,%    ",
              "\n   |||                                 *******/  ",
              "\n |||||||    (**..#**.                  */   **/  ",
@@ -235,6 +251,7 @@ multidog <- function(refmat,
              "\n   |||               , **/   #%         .*    .. ",
              "\n   |||                               ,,,*        ",
              "\n\nWorking on it..."))
+  log_stamp("ASCII splash printed. Beginning input validation.")
 
   ## Check input --------------------------------------------------------------
   assertthat::assert_that(is.matrix(refmat))
@@ -279,6 +296,7 @@ multidog <- function(refmat,
     p1_id <- p2_id
     p2_id <- NULL
   }
+  log_stamp("Input validation complete.")
 
   ## Get list of individuals ---------------------------------------------------
   indlist <- colnames(refmat)
@@ -289,6 +307,7 @@ multidog <- function(refmat,
   if (!is.null(p2_id)) {
     indlist <- indlist[indlist != p2_id]
   }
+  log_stamp("Derived ", length(indlist), " analysis individuals after parent exclusion.")
 
   ## Remove NA SNPs ------------------------------------------------------------
   which_bad_size <- apply(X = (sizemat[, indlist, drop = FALSE] == 0) | is.na(sizemat[, indlist, drop = FALSE]),
@@ -299,6 +318,7 @@ multidog <- function(refmat,
                          FUN = all)
 
   bad_snps <- unique(c(rownames(sizemat)[which_bad_size], rownames(refmat)[which_bad_ref]))
+  log_stamp("Identified ", length(bad_snps), " SNPs with all-zero/all-missing information.")
 
   if (length(bad_snps) > 0) {
     if (length(bad_snps) == nrow(sizemat)) {
@@ -306,6 +326,7 @@ multidog <- function(refmat,
     }
     sizemat <- sizemat[!(rownames(sizemat) %in% bad_snps), , drop = FALSE]
     refmat  <- refmat[!(rownames(refmat) %in% bad_snps), , drop = FALSE]
+    log_stamp("Removed bad SNPs. Remaining SNPs: ", nrow(refmat), ".")
   }
 
   ## Get list of SNPs ---------------------------------------------------------
@@ -330,17 +351,27 @@ multidog <- function(refmat,
 
   refmat <- refmat[, indlist, drop = FALSE]
   sizemat <- sizemat[, indlist, drop = FALSE]
+  log_stamp("Prepared working matrices with dimensions ",
+            nrow(refmat), " x ", ncol(refmat), ".")
 
   ## Register doFuture  -------------------------------------------------------
   oldDoPar <- doFuture::registerDoFuture()
   on.exit(with(oldDoPar, foreach::setDoPar(fun=fun, data=data, info=info)), add = TRUE)
+  log_stamp("Registered doFuture backend.")
 
   ## Register workers ----------------------------------------------------------
   if (!is.na(nc)) {
     if (nc > 1) {
+      log_stamp("Configuring multisession future plan with ", nc, " workers.")
       oplan <- future::plan(future::multisession, workers = nc)
       on.exit(future::plan(oplan), add = TRUE)
+      log_stamp("Multisession plan active.")
     }
+  }
+  if (is.na(nc)) {
+    log_stamp("nc=NA detected; using caller-provided future::plan().")
+  } else if (nc <= 1) {
+    log_stamp("Running in single-worker mode (nc <= 1).")
   }
 
   ## Fit flexdog on all SNPs --------------------------------------------------
@@ -361,6 +392,11 @@ multidog <- function(refmat,
                               .export       = c("flexdog"),
                               .combine      = combine_flex,
                               .multicombine = TRUE) %dorng% {
+
+                                iter_start <- Sys.time()
+                                message(sprintf("[%s] [snp=%s] start flexdog().",
+                                                format(iter_start, "%Y-%m-%d %H:%M:%OS3"),
+                                                current_snp))
 
                                 if (is.na(p1_ref) || is.na(p1_size)) {
                                   p1_ref <- NULL
@@ -386,6 +422,12 @@ multidog <- function(refmat,
                                                 prior_vec = prior_vec,
                                                 ...
                                                 )
+                                iter_end <- Sys.time()
+                                iter_elapsed <- round(as.numeric(difftime(iter_end, iter_start, units = "secs")), 3)
+                                message(sprintf("[%s] [snp=%s] finished flexdog() in %0.3fs.",
+                                                format(iter_end, "%Y-%m-%d %H:%M:%OS3"),
+                                                current_snp,
+                                                iter_elapsed))
 
                                 names(fout$gene_dist)  <- paste0("Pr_", seq(0, ploidy, by = 1))
                                 colnames(fout$postmat) <- paste0("Pr_", seq(0, ploidy, by = 1))
@@ -449,6 +491,8 @@ multidog <- function(refmat,
   class(retlist) <- "multidog"
 
   cat("done!")
+  log_stamp("multidog() complete. snpdf rows=", nrow(retlist$snpdf),
+            "; inddf rows=", nrow(retlist$inddf), ".")
 
   return(retlist)
 }
