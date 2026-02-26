@@ -219,7 +219,7 @@ multidog <- function(refmat,
                      nc = 1,
                      p1_id = NULL,
                      p2_id = NULL,
-                     bias_init = exp(c(-1, -0.5, 0, 0.5, 1)),
+                     bias_init = exp(c(-1, 0, 1)),
                      prior_vec = NULL,
                      ...) {
 
