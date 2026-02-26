@@ -224,13 +224,19 @@ multidog <- function(refmat,
                      ...) {
 
   log_start <- Sys.time()
+  timings_file <- "timings.log"
+  append_timing_line <- function(line) {
+    cat(paste0(line, "\n"), file = timings_file, append = TRUE)
+  }
   log_stamp <- function(..., .start = log_start) {
     current_time <- Sys.time()
     elapsed <- round(as.numeric(difftime(current_time, .start, units = "secs")), 3)
-    message(sprintf("[%s] (+%0.3fs) %s",
+    line <- sprintf("[%s] (+%0.3fs) %s",
                     format(current_time, "%Y-%m-%d %H:%M:%OS3"),
                     elapsed,
-                    paste0(..., collapse = "")))
+                    paste0(..., collapse = ""))
+    message(line)
+    append_timing_line(line)
   }
 
   log_stamp("multidog() invoked.")
@@ -394,9 +400,11 @@ multidog <- function(refmat,
                               .multicombine = TRUE) %dorng% {
 
                                 iter_start <- Sys.time()
-                                message(sprintf("[%s] [snp=%s] start flexdog().",
-                                                format(iter_start, "%Y-%m-%d %H:%M:%OS3"),
-                                                current_snp))
+                                iter_start_line <- sprintf("[%s] [snp=%s] start flexdog().",
+                                                           format(iter_start, "%Y-%m-%d %H:%M:%OS3"),
+                                                           current_snp)
+                                message(iter_start_line)
+                                cat(paste0(iter_start_line, "\n"), file = "timings.log", append = TRUE)
 
                                 if (is.na(p1_ref) || is.na(p1_size)) {
                                   p1_ref <- NULL
@@ -425,10 +433,12 @@ multidog <- function(refmat,
                                                 )
                                 iter_end <- Sys.time()
                                 iter_elapsed <- round(as.numeric(difftime(iter_end, iter_start, units = "secs")), 3)
-                                message(sprintf("[%s] [snp=%s] finished flexdog() in %0.3fs.",
-                                                format(iter_end, "%Y-%m-%d %H:%M:%OS3"),
-                                                current_snp,
-                                                iter_elapsed))
+                                iter_end_line <- sprintf("[%s] [snp=%s] finished flexdog() in %0.3fs.",
+                                                         format(iter_end, "%Y-%m-%d %H:%M:%OS3"),
+                                                         current_snp,
+                                                         iter_elapsed)
+                                message(iter_end_line)
+                                cat(paste0(iter_end_line, "\n"), file = "timings.log", append = TRUE)
 
                                 names(fout$gene_dist)  <- paste0("Pr_", seq(0, ploidy, by = 1))
                                 colnames(fout$postmat) <- paste0("Pr_", seq(0, ploidy, by = 1))

@@ -102,6 +102,7 @@ flexdog <- function(refvec,
   model <- match.arg(model)
 
   log_start <- Sys.time()
+  timings_file <- "timings.log"
   flex_log <- function(...) {
     if (!benchmark_log) {
       return(invisible(NULL))
@@ -109,11 +110,13 @@ flexdog <- function(refvec,
     current_time <- Sys.time()
     elapsed <- round(as.numeric(difftime(current_time, log_start, units = "secs")), 3)
     snp_label <- if (is.null(snpname)) "NA" else snpname
-    message(sprintf("[%s] [snp=%s] (+%0.3fs) %s",
+    line <- sprintf("[%s] [snp=%s] (+%0.3fs) %s",
                     format(current_time, "%Y-%m-%d %H:%M:%OS3"),
                     snp_label,
                     elapsed,
-                    paste0(..., collapse = "")))
+                    paste0(..., collapse = ""))
+    message(line)
+    cat(paste0(line, "\n"), file = timings_file, append = TRUE)
   }
   flex_log("flexdog() invoked with model=", model,
            "; bias_init count=", length(bias_init),
@@ -553,6 +556,7 @@ flexdog_full <- function(refvec,
   model <- match.arg(model)
 
   full_log_start <- Sys.time()
+  timings_file <- "timings.log"
   full_log <- function(...) {
     if (!benchmark_log) {
       return(invisible(NULL))
@@ -560,11 +564,13 @@ flexdog_full <- function(refvec,
     current_time <- Sys.time()
     elapsed <- round(as.numeric(difftime(current_time, full_log_start, units = "secs")), 3)
     snp_label <- if (is.null(snpname)) "NA" else snpname
-    message(sprintf("[%s] [snp=%s] [flexdog_full] (+%0.3fs) %s",
+    line <- sprintf("[%s] [snp=%s] [flexdog_full] (+%0.3fs) %s",
                     format(current_time, "%Y-%m-%d %H:%M:%OS3"),
                     snp_label,
                     elapsed,
-                    paste0(..., collapse = "")))
+                    paste0(..., collapse = ""))
+    message(line)
+    cat(paste0(line, "\n"), file = timings_file, append = TRUE)
   }
   full_log("Starting flexdog_full() with model=", model,
            "; n individuals=", length(refvec),
