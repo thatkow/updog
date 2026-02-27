@@ -280,8 +280,12 @@ multidog <- function(refmat,
                 setdiff(rownames(refmat), rownames(sizemat))))
   }
   model <- match.arg(model)
-  assertthat::assert_that(is.flag(verbose))
-  assertthat::assert_that(is.flag(worker_verbose))
+  assertthat::assert_that(is.logical(verbose))
+  assertthat::assert_that(length(verbose) == 1)
+  assertthat::assert_that(!is.na(verbose))
+  assertthat::assert_that(is.logical(worker_verbose))
+  assertthat::assert_that(length(worker_verbose) == 1)
+  assertthat::assert_that(!is.na(worker_verbose))
   assertthat::assert_that(length(nc) == 1)
   if (!is.na(nc)) {
     assertthat::assert_that(is.numeric(nc))
