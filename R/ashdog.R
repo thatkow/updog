@@ -523,6 +523,17 @@ flexdog_full <- function(refvec,
                          prior_vec   = NULL,
                          seq_upper   = 0.05) {
 
+  start_time <- proc.time()[["elapsed"]]
+  log_msg <- function(...) {
+    if (verbose) {
+      cat(sprintf("[%s] [flexdog_full] %s\n",
+                  format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
+                  paste0(...)))
+    }
+  }
+  log_msg("Starting fit for SNP ", ifelse(is.null(snpname), "<unnamed>", snpname), ".")
+  step_time <- proc.time()[["elapsed"]]
+
   ## Check input -----------------------------------------------------
   model <- match.arg(model)
   if (model == "uniform") {
@@ -608,7 +619,11 @@ flexdog_full <- function(refvec,
     stop("Currently, `model = \"f1pp\"` and `model = \"s1pp\"` are only supported when ploidy = 4.")
   }
 
+  log_msg("Input checks completed in ", sprintf("%.2f", proc.time()[["elapsed"]] - step_time),
+          " sec (model = ", model, ", ploidy = ", ploidy, ").")
+
   ## Initialization for HW
+  step_time <- proc.time()[["elapsed"]]
   mode <- mean(refvec / sizevec, na.rm = TRUE)
 
   ## Deal with missingness in sizevec and refvec -----------------------
@@ -664,7 +679,11 @@ flexdog_full <- function(refvec,
   assertthat::are_equal(sum(pivec), 1)
   control$pivec <- pivec
 
+  log_msg("Pre-EM setup completed in ", sprintf("%.2f", proc.time()[["elapsed"]] - step_time),
+          " sec (", length(refvec), " non-missing individuals).")
+
   ## Run EM ----------------------------------------
+  step_time <- proc.time()[["elapsed"]]
   iter_index  <- 1
   err         <- tol + 1
   llike       <- -Inf
@@ -777,6 +796,13 @@ flexdog_full <- function(refvec,
     err        <- abs(llike - llike_old)
     iter_index <- iter_index + 1
 
+    if (verbose && ((iter_index %% 10) == 0 || err <= tol || iter_index > itermax)) {
+      log_msg("EM progress: iter=", iter_index - 1,
+              ", elapsed=", sprintf("%.2f", proc.time()[["elapsed"]] - step_time),
+              " sec, llike=", sprintf("%.6f", llike),
+              ", delta=", sprintf("%.6g", err), ".")
+    }
+
     if (llike < llike_old - 10 ^ -5) {
       warning(paste0("flexdog: likelihood not increasing.\nDifference is: ",
                      llike - llike_old))
@@ -862,6 +888,10 @@ flexdog_full <- function(refvec,
 
   ## Set class to flexdog ---------------------------------------------
   class(return_list) <- "flexdog"
+
+  log_msg("Finished in ", sprintf("%.2f", proc.time()[["elapsed"]] - start_time),
+          " sec (iterations=", return_list$num_iter,
+          ", final llike=", sprintf("%.6f", return_list$llike), ").")
 
   return(return_list)
 }
