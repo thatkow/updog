@@ -221,20 +221,34 @@ multidog <- function(refmat,
                      p2_id = NULL,
                      bias_init = exp(c(-1, -0.5, 0, 0.5, 1)),
                      prior_vec = NULL,
+                     verbose = TRUE,
                      ...) {
 
-  cat(paste0(  "    |                                   *.#,%    ",
-             "\n   |||                                 *******/  ",
-             "\n |||||||    (**..#**.                  */   **/  ",
-             "\n|||||||||    */****************************/*%   ",
-             "\n   |||    &****..,*.************************/    ",
-             "\n   |||     (....,,,*,...****%********/(******    ",
-             "\n   |||                ,,****%////,,,,./.****/    ",
-             "\n   |||                  /**//         .*///....  ",
-             "\n   |||                  .*/*/%#         .,/   ., ",
-             "\n   |||               , **/   #%         .*    .. ",
-             "\n   |||                               ,,,*        ",
-             "\n\nWorking on it..."))
+  start_time <- proc.time()[["elapsed"]]
+  log_msg <- function(...) {
+    if (verbose) {
+      cat(sprintf("[%s] [multidog] %s\n",
+                  format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
+                  paste0(...)))
+    }
+  }
+
+  if (verbose) {
+    cat(paste0(  "    |                                   *.#,%    ",
+               "\n   |||                                 *******/  ",
+               "\n |||||||    (**..#**.                  */   **/  ",
+               "\n|||||||||    */****************************/*%   ",
+               "\n   |||    &****..,*.************************/    ",
+               "\n   |||     (....,,,*,...****%********/(******    ",
+               "\n   |||                ,,****%////,,,,./.****/    ",
+               "\n   |||                  /**//         .*///....  ",
+               "\n   |||                  .*/*/%#         .,/   ., ",
+               "\n   |||               , **/   #%         .*    .. ",
+               "\n   |||                               ,,,*        ",
+               "\n\nWorking on it...\n"))
+  }
+
+  step_time <- proc.time()[["elapsed"]]
 
   ## Check input --------------------------------------------------------------
   assertthat::assert_that(is.matrix(refmat))
@@ -279,8 +293,10 @@ multidog <- function(refmat,
     p1_id <- p2_id
     p2_id <- NULL
   }
+  log_msg("Input checks completed in ", sprintf("%.2f", proc.time()[["elapsed"]] - step_time), " sec.")
 
   ## Get list of individuals ---------------------------------------------------
+  step_time <- proc.time()[["elapsed"]]
   indlist <- colnames(refmat)
 
   if (!is.null(p1_id)) {
@@ -289,8 +305,11 @@ multidog <- function(refmat,
   if (!is.null(p2_id)) {
     indlist <- indlist[indlist != p2_id]
   }
+  log_msg("Individual list prepared in ", sprintf("%.2f", proc.time()[["elapsed"]] - step_time), " sec (",
+          length(indlist), " individuals).")
 
   ## Remove NA SNPs ------------------------------------------------------------
+  step_time <- proc.time()[["elapsed"]]
   which_bad_size <- apply(X = (sizemat[, indlist, drop = FALSE] == 0) | is.na(sizemat[, indlist, drop = FALSE]),
                           MARGIN = 1,
                           FUN = all)
@@ -307,11 +326,14 @@ multidog <- function(refmat,
     sizemat <- sizemat[!(rownames(sizemat) %in% bad_snps), , drop = FALSE]
     refmat  <- refmat[!(rownames(refmat) %in% bad_snps), , drop = FALSE]
   }
+  log_msg("SNP filtering completed in ", sprintf("%.2f", proc.time()[["elapsed"]] - step_time),
+          " sec (removed ", length(bad_snps), " SNPs; remaining ", nrow(refmat), ").")
 
   ## Get list of SNPs ---------------------------------------------------------
   snplist <- rownames(refmat)
 
   ## Extract parent vectors ---------------------------------------------------
+  step_time <- proc.time()[["elapsed"]]
   if (!is.null(p1_id)) {
     p1_refvec <- refmat[, p1_id]
     p1_sizevec <- sizemat[, p1_id]
@@ -330,8 +352,11 @@ multidog <- function(refmat,
 
   refmat <- refmat[, indlist, drop = FALSE]
   sizemat <- sizemat[, indlist, drop = FALSE]
+  log_msg("Parent vector extraction/setup completed in ",
+          sprintf("%.2f", proc.time()[["elapsed"]] - step_time), " sec.")
 
   ## Register doFuture  -------------------------------------------------------
+  step_time <- proc.time()[["elapsed"]]
   oldDoPar <- doFuture::registerDoFuture()
   on.exit(with(oldDoPar, foreach::setDoPar(fun=fun, data=data, info=info)), add = TRUE)
 
@@ -342,8 +367,11 @@ multidog <- function(refmat,
       on.exit(future::plan(oplan), add = TRUE)
     }
   }
+  log_msg("Parallel backend configured in ", sprintf("%.2f", proc.time()[["elapsed"]] - step_time),
+          " sec (nc = ", ifelse(is.na(nc), "NA", as.character(nc)), ").")
 
   ## Fit flexdog on all SNPs --------------------------------------------------
+  step_time <- proc.time()[["elapsed"]]
   current_snp <- NULL
   refvec <- NULL
   sizevec <- NULL
@@ -442,13 +470,15 @@ multidog <- function(refmat,
 
                                 list(snpdf = snpprop, inddf = indprop)
                               }
+  log_msg("Per-SNP flexdog fits completed in ", sprintf("%.2f", proc.time()[["elapsed"]] - step_time),
+          " sec for ", length(snplist), " SNPs.")
 
   names(retlist) <- c("snpdf", "inddf")
   attr(retlist, "rng") <- NULL
   attr(retlist, "doRNG_version") <- NULL
   class(retlist) <- "multidog"
 
-  cat("done!")
+  log_msg("Done in ", sprintf("%.2f", proc.time()[["elapsed"]] - start_time), " sec.")
 
   return(retlist)
 }

@@ -97,23 +97,32 @@ flexdog <- function(refvec,
                     verbose     = TRUE,
                     prior_vec   = NULL,
                     ...) {
+  start_time <- proc.time()[["elapsed"]]
+  log_msg <- function(...) {
+    if (verbose) {
+      cat(sprintf("[%s] [flexdog] %s\n",
+                  format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
+                  paste0(...)))
+    }
+  }
+
+  log_msg("Starting fit for SNP ", ifelse(is.null(snpname), "<unnamed>", snpname),
+          " with ", length(refvec), " individuals.")
+
   assertthat::assert_that(all(bias_init > 0))
   model <- match.arg(model)
 
   if (verbose) {
     if ((length(refvec) < (10 * (ploidy + 1))) & (model == "flex")) {
-      cat(paste0("Very few individuals for model = \"flex\"",
-                 "\nYou might want to try model = \"norm\" instead.\n\n"))
+      log_msg("Very few individuals for model = \"flex\". You might want to try model = \"norm\" instead.")
     }
   }
 
   fout <- list()
   fout$llike <- -Inf
   for (bias_index in seq_along(bias_init)) {
-    if (verbose) {
-      cat("         Fit:", bias_index, "of", length(bias_init), "\n")
-      cat("Initial Bias:", bias_init[bias_index], "\n")
-    }
+    fit_start_time <- proc.time()[["elapsed"]]
+    log_msg("Fit ", bias_index, " of ", length(bias_init), " (initial bias = ", bias_init[bias_index], ")")
 
     fcurrent <- flexdog_full(refvec    = refvec,
                              sizevec   = sizevec,
@@ -129,24 +138,21 @@ flexdog <- function(refvec,
                              prior_vec = prior_vec,
                              ...)
 
-    if (verbose) {
-      cat("Log-Likelihood:", fcurrent$llike, "\n")
-    }
+    fit_duration <- proc.time()[["elapsed"]] - fit_start_time
+    log_msg("Fit ", bias_index, " completed in ", sprintf("%.2f", fit_duration),
+            " sec (log-likelihood = ", sprintf("%.6f", fcurrent$llike), ")")
 
     if (fcurrent$llike > fout$llike) {
       fout <- fcurrent
 
-      if (verbose) {
-        cat("Keeping new fit.\n\n")
-      }
-    } else if (verbose) {
-      cat("Keeping old fit.\n\n")
+      log_msg("Keeping new fit.")
+    } else {
+      log_msg("Keeping old fit.")
     }
   }
 
-  if (verbose) {
-    cat("Done!\n")
-  }
+  total_duration <- proc.time()[["elapsed"]] - start_time
+  log_msg("Done in ", sprintf("%.2f", total_duration), " sec.")
 
   return(fout)
 }
@@ -1258,5 +1264,4 @@ get_dimname <- function(ploidy) {
                    FUN = paste, collapse = "", FUN.VALUE = "character")
   return(dimvec)
 }
-
 
