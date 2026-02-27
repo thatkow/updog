@@ -110,6 +110,8 @@ flexdog <- function(refvec,
           " with ", length(refvec), " individuals.")
 
   assertthat::assert_that(all(bias_init > 0))
+  log_msg("Configuration: model = ", model[1], ", ploidy = ", ploidy,
+          ", bias initializations = ", length(bias_init), ".")
   model <- match.arg(model)
 
   if (verbose) {

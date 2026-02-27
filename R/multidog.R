@@ -109,6 +109,10 @@ combine_flex <- function(...) {
 #' @param p2_id The ID of the second parent. This should be a character of
 #'     length 1. This should correspond to a single column name in \code{refmat}
 #'     and \code{sizemat}.
+#' @param worker_verbose A logical. If \code{TRUE}, then each per-SNP
+#'     \code{flexdog()} call will emit its own verbose logging inside workers.
+#'     This can generate a lot of output for large jobs, especially when
+#'     running in parallel.
 #'
 #' @return A list-like object of two data frames.
 #' \describe{
@@ -222,6 +226,7 @@ multidog <- function(refmat,
                      bias_init = exp(c(-1, -0.5, 0, 0.5, 1)),
                      prior_vec = NULL,
                      verbose = TRUE,
+                     worker_verbose = FALSE,
                      ...) {
 
   start_time <- proc.time()[["elapsed"]]
@@ -250,6 +255,11 @@ multidog <- function(refmat,
 
   step_time <- proc.time()[["elapsed"]]
 
+  log_msg("Run configuration: ", nrow(refmat), " SNPs x ", ncol(refmat),
+          " samples; model = ", model[1], "; ploidy = ", ploidy,
+          "; nc = ", ifelse(is.na(nc), "NA", as.character(nc)),
+          "; worker_verbose = ", worker_verbose, ".")
+
   ## Check input --------------------------------------------------------------
   assertthat::assert_that(is.matrix(refmat))
   assertthat::assert_that(is.matrix(sizemat))
@@ -270,6 +280,8 @@ multidog <- function(refmat,
                 setdiff(rownames(refmat), rownames(sizemat))))
   }
   model <- match.arg(model)
+  assertthat::assert_that(is.flag(verbose))
+  assertthat::assert_that(is.flag(worker_verbose))
   assertthat::assert_that(length(nc) == 1)
   if (!is.na(nc)) {
     assertthat::assert_that(is.numeric(nc))
@@ -410,7 +422,7 @@ multidog <- function(refmat,
                                                 p2size    = p2_size,
                                                 snpname   = current_snp,
                                                 bias_init = bias_init,
-                                                verbose   = FALSE,
+                                                verbose   = worker_verbose,
                                                 prior_vec = prior_vec,
                                                 ...
                                                 )
