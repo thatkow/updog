@@ -109,6 +109,10 @@ combine_flex <- function(...) {
 #' @param p2_id The ID of the second parent. This should be a character of
 #'     length 1. This should correspond to a single column name in \code{refmat}
 #'     and \code{sizemat}.
+#' @param worker_verbose A logical. If \code{TRUE}, then each per-SNP
+#'     \code{flexdog()} call will emit its own verbose logging inside workers.
+#'     This can generate a lot of output for large jobs, especially when
+#'     running in parallel.
 #'
 #' @return A list-like object of two data frames.
 #' \describe{
@@ -221,20 +225,40 @@ multidog <- function(refmat,
                      p2_id = NULL,
                      bias_init = exp(c(-1, -0.5, 0, 0.5, 1)),
                      prior_vec = NULL,
+                     verbose = TRUE,
+                     worker_verbose = FALSE,
                      ...) {
 
-  cat(paste0(  "    |                                   *.#,%    ",
-             "\n   |||                                 *******/  ",
-             "\n |||||||    (**..#**.                  */   **/  ",
-             "\n|||||||||    */****************************/*%   ",
-             "\n   |||    &****..,*.************************/    ",
-             "\n   |||     (....,,,*,...****%********/(******    ",
-             "\n   |||                ,,****%////,,,,./.****/    ",
-             "\n   |||                  /**//         .*///....  ",
-             "\n   |||                  .*/*/%#         .,/   ., ",
-             "\n   |||               , **/   #%         .*    .. ",
-             "\n   |||                               ,,,*        ",
-             "\n\nWorking on it..."))
+  start_time <- proc.time()[["elapsed"]]
+  log_msg <- function(...) {
+    if (verbose) {
+      cat(sprintf("[%s] [multidog] %s\n",
+                  format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
+                  paste0(...)))
+    }
+  }
+
+  if (verbose) {
+    cat(paste0(  "    |                                   *.#,%    ",
+               "\n   |||                                 *******/  ",
+               "\n |||||||    (**..#**.                  */   **/  ",
+               "\n|||||||||    */****************************/*%   ",
+               "\n   |||    &****..,*.************************/    ",
+               "\n   |||     (....,,,*,...****%********/(******    ",
+               "\n   |||                ,,****%////,,,,./.****/    ",
+               "\n   |||                  /**//         .*///....  ",
+               "\n   |||                  .*/*/%#         .,/   ., ",
+               "\n   |||               , **/   #%         .*    .. ",
+               "\n   |||                               ,,,*        ",
+               "\n\nWorking on it...\n"))
+  }
+
+  step_time <- proc.time()[["elapsed"]]
+
+  log_msg("Run configuration: ", nrow(refmat), " SNPs x ", ncol(refmat),
+          " samples; model = ", model[1], "; ploidy = ", ploidy,
+          "; nc = ", ifelse(is.na(nc), "NA", as.character(nc)),
+          "; worker_verbose = ", worker_verbose, ".")
 
   ## Check input --------------------------------------------------------------
   assertthat::assert_that(is.matrix(refmat))
@@ -256,6 +280,12 @@ multidog <- function(refmat,
                 setdiff(rownames(refmat), rownames(sizemat))))
   }
   model <- match.arg(model)
+  assertthat::assert_that(is.logical(verbose))
+  assertthat::assert_that(length(verbose) == 1)
+  assertthat::assert_that(!is.na(verbose))
+  assertthat::assert_that(is.logical(worker_verbose))
+  assertthat::assert_that(length(worker_verbose) == 1)
+  assertthat::assert_that(!is.na(worker_verbose))
   assertthat::assert_that(length(nc) == 1)
   if (!is.na(nc)) {
     assertthat::assert_that(is.numeric(nc))
@@ -279,8 +309,10 @@ multidog <- function(refmat,
     p1_id <- p2_id
     p2_id <- NULL
   }
+  log_msg("Input checks completed in ", sprintf("%.2f", proc.time()[["elapsed"]] - step_time), " sec.")
 
   ## Get list of individuals ---------------------------------------------------
+  step_time <- proc.time()[["elapsed"]]
   indlist <- colnames(refmat)
 
   if (!is.null(p1_id)) {
@@ -289,8 +321,11 @@ multidog <- function(refmat,
   if (!is.null(p2_id)) {
     indlist <- indlist[indlist != p2_id]
   }
+  log_msg("Individual list prepared in ", sprintf("%.2f", proc.time()[["elapsed"]] - step_time), " sec (",
+          length(indlist), " individuals).")
 
   ## Remove NA SNPs ------------------------------------------------------------
+  step_time <- proc.time()[["elapsed"]]
   which_bad_size <- apply(X = (sizemat[, indlist, drop = FALSE] == 0) | is.na(sizemat[, indlist, drop = FALSE]),
                           MARGIN = 1,
                           FUN = all)
@@ -307,11 +342,14 @@ multidog <- function(refmat,
     sizemat <- sizemat[!(rownames(sizemat) %in% bad_snps), , drop = FALSE]
     refmat  <- refmat[!(rownames(refmat) %in% bad_snps), , drop = FALSE]
   }
+  log_msg("SNP filtering completed in ", sprintf("%.2f", proc.time()[["elapsed"]] - step_time),
+          " sec (removed ", length(bad_snps), " SNPs; remaining ", nrow(refmat), ").")
 
   ## Get list of SNPs ---------------------------------------------------------
   snplist <- rownames(refmat)
 
   ## Extract parent vectors ---------------------------------------------------
+  step_time <- proc.time()[["elapsed"]]
   if (!is.null(p1_id)) {
     p1_refvec <- refmat[, p1_id]
     p1_sizevec <- sizemat[, p1_id]
@@ -330,8 +368,11 @@ multidog <- function(refmat,
 
   refmat <- refmat[, indlist, drop = FALSE]
   sizemat <- sizemat[, indlist, drop = FALSE]
+  log_msg("Parent vector extraction/setup completed in ",
+          sprintf("%.2f", proc.time()[["elapsed"]] - step_time), " sec.")
 
   ## Register doFuture  -------------------------------------------------------
+  step_time <- proc.time()[["elapsed"]]
   oldDoPar <- doFuture::registerDoFuture()
   on.exit(with(oldDoPar, foreach::setDoPar(fun=fun, data=data, info=info)), add = TRUE)
 
@@ -342,113 +383,141 @@ multidog <- function(refmat,
       on.exit(future::plan(oplan), add = TRUE)
     }
   }
+  log_msg("Parallel backend configured in ", sprintf("%.2f", proc.time()[["elapsed"]] - step_time),
+          " sec (nc = ", ifelse(is.na(nc), "NA", as.character(nc)), ").")
 
   ## Fit flexdog on all SNPs --------------------------------------------------
-  current_snp <- NULL
-  refvec <- NULL
-  sizevec <- NULL
-  p1_ref <- NULL
-  p1_size <- NULL
-  p2_ref <- NULL
-  p2_size <- NULL
-  retlist <- foreach::foreach(current_snp   = iterators::iter(snplist),
-                              refvec        = iterators::iter(refmat, by = "row"),
-                              sizevec       = iterators::iter(sizemat, by = "row"),
-                              p1_ref        = iterators::iter(p1_refvec),
-                              p1_size       = iterators::iter(p1_sizevec),
-                              p2_ref        = iterators::iter(p2_refvec),
-                              p2_size       = iterators::iter(p2_sizevec),
-                              .export       = c("flexdog"),
-                              .combine      = combine_flex,
-                              .multicombine = TRUE) %dorng% {
+  step_time <- proc.time()[["elapsed"]]
+  fit_single_snp <- function(current_snp, refvec, sizevec, p1_ref, p1_size, p2_ref, p2_size) {
+    if (is.na(p1_ref) || is.na(p1_size)) {
+      p1_ref <- NULL
+      p1_size <- NULL
+    }
 
-                                if (is.na(p1_ref) || is.na(p1_size)) {
-                                  p1_ref <- NULL
-                                  p1_size <- NULL
-                                }
+    if (is.na(p2_ref) || is.na(p2_size)) {
+      p2_ref <- NULL
+      p2_size <- NULL
+    }
 
-                                if (is.na(p2_ref) || is.na(p2_size)) {
-                                  p2_ref <- NULL
-                                  p2_size <- NULL
-                                }
+    fout <- flexdog(refvec    = refvec,
+                    sizevec   = sizevec,
+                    ploidy    = ploidy,
+                    model     = model,
+                    p1ref     = p1_ref,
+                    p1size    = p1_size,
+                    p2ref     = p2_ref,
+                    p2size    = p2_size,
+                    snpname   = current_snp,
+                    bias_init = bias_init,
+                    verbose   = worker_verbose,
+                    prior_vec = prior_vec,
+                    ...)
 
-                                fout <- flexdog(refvec    = refvec,
-                                                sizevec   = sizevec,
-                                                ploidy    = ploidy,
-                                                model     = model,
-                                                p1ref     = p1_ref,
-                                                p1size    = p1_size,
-                                                p2ref     = p2_ref,
-                                                p2size    = p2_size,
-                                                snpname   = current_snp,
-                                                bias_init = bias_init,
-                                                verbose   = FALSE,
-                                                prior_vec = prior_vec,
-                                                ...
-                                                )
+    names(fout$gene_dist)  <- paste0("Pr_", seq(0, ploidy, by = 1))
+    colnames(fout$postmat) <- paste0("Pr_", seq(0, ploidy, by = 1))
+    colnames(fout$genologlike) <- paste0("logL_", seq(0, ploidy, by = 1))
 
-                                names(fout$gene_dist)  <- paste0("Pr_", seq(0, ploidy, by = 1))
-                                colnames(fout$postmat) <- paste0("Pr_", seq(0, ploidy, by = 1))
-                                colnames(fout$genologlike) <- paste0("logL_", seq(0, ploidy, by = 1))
+    ## change to NA so can return in data frame ----
+    if (is.null(p1_ref)) {
+      p1_ref <- NA_real_
+    }
+    if (is.null(p1_size)) {
+      p1_size <- NA_real_
+    }
+    if (is.null(p2_ref)) {
+      p2_ref <- NA_real_
+    }
+    if (is.null(p2_size)) {
+      p2_size <- NA_real_
+    }
 
-                                ## change to NA so can return in data frame ----
-                                if (is.null(p1_ref)) {
-                                  p1_ref <- NA_real_
-                                }
-                                if (is.null(p1_size)) {
-                                  p1_size <- NA_real_
-                                }
-                                if (is.null(p2_ref)) {
-                                  p2_ref <- NA_real_
-                                }
-                                if (is.null(p2_size)) {
-                                  p2_size <- NA_real_
-                                }
+    snpprop <- cbind(
+      data.frame(snp      = current_snp,
+                 bias     = fout$bias,
+                 seq      = fout$seq,
+                 od       = fout$od,
+                 prop_mis = fout$prop_mis,
+                 num_iter = fout$num_iter,
+                 llike    = fout$llike,
+                 ploidy   = fout$input$ploidy,
+                 model    = fout$input$model,
+                 p1ref    = p1_ref,
+                 p1size   = p1_size,
+                 p2ref    = p2_ref,
+                 p2size   = p2_size),
+      as.data.frame(matrix(fout$gene_dist, nrow = 1, dimnames = list(NULL, names(fout$gene_dist))))
+    )
 
-                                snpprop <- cbind(
-                                  data.frame(snp      = current_snp,
-                                             bias     = fout$bias,
-                                             seq      = fout$seq,
-                                             od       = fout$od,
-                                             prop_mis = fout$prop_mis,
-                                             num_iter = fout$num_iter,
-                                             llike    = fout$llike,
-                                             ploidy   = fout$input$ploidy,
-                                             model    = fout$input$model,
-                                             p1ref    = p1_ref,
-                                             p1size   = p1_size,
-                                             p2ref    = p2_ref,
-                                             p2size   = p2_size),
-                                  as.data.frame(matrix(fout$gene_dist, nrow = 1, dimnames = list(NULL, names(fout$gene_dist))))
-                                )
+    if (length(fout$par) > 0) {
+      par_vec_output <- unlist(fout$par)
+      snpprop <- cbind(snpprop, as.data.frame(matrix(par_vec_output, nrow = 1, dimnames = list(NULL, names(par_vec_output)))))
+    }
 
+    indprop <- cbind(
+      data.frame(snp         = current_snp,
+                 ind         = indlist,
+                 ref         = fout$input$refvec,
+                 size        = fout$input$sizevec,
+                 geno        = fout$geno,
+                 postmean    = fout$postmean,
+                 maxpostprob = fout$maxpostprob),
+      fout$postmat,
+      fout$genologlike)
 
-                                if (length(fout$par) > 0) {
-                                  par_vec_output <- unlist(fout$par)
-                                  snpprop <- cbind(snpprop, as.data.frame(matrix(par_vec_output, nrow = 1, dimnames = list(NULL, names(par_vec_output)))))
-                                }
+    list(snpdf = snpprop, inddf = indprop)
+  }
 
+  snp_total <- length(snplist)
+  progress_chunks <- max(1, min(snp_total, 10))
+  chunk_size <- max(1, ceiling(snp_total / progress_chunks))
+  chunk_starts <- seq.int(1, snp_total, by = chunk_size)
 
-                                indprop <- cbind(
-                                  data.frame(snp         = current_snp,
-                                             ind         = indlist,
-                                             ref         = fout$input$refvec,
-                                             size        = fout$input$sizevec,
-                                             geno        = fout$geno,
-                                             postmean    = fout$postmean,
-                                             maxpostprob = fout$maxpostprob),
-                                  fout$postmat,
-                                  fout$genologlike)
+  retlist <- NULL
+  completed_snps <- 0
+  for (chunk_index in seq_along(chunk_starts)) {
+    chunk_start <- chunk_starts[chunk_index]
+    chunk_end <- min(snp_total, chunk_start + chunk_size - 1)
 
-                                list(snpdf = snpprop, inddf = indprop)
-                              }
+    chunk_result <- foreach::foreach(current_snp = iterators::iter(snplist[chunk_start:chunk_end]),
+                                     refvec      = iterators::iter(refmat[chunk_start:chunk_end, , drop = FALSE], by = "row"),
+                                     sizevec     = iterators::iter(sizemat[chunk_start:chunk_end, , drop = FALSE], by = "row"),
+                                     p1_ref      = iterators::iter(p1_refvec[chunk_start:chunk_end]),
+                                     p1_size     = iterators::iter(p1_sizevec[chunk_start:chunk_end]),
+                                     p2_ref      = iterators::iter(p2_refvec[chunk_start:chunk_end]),
+                                     p2_size     = iterators::iter(p2_sizevec[chunk_start:chunk_end]),
+                                     .export     = c("flexdog", "fit_single_snp"),
+                                     .combine    = combine_flex,
+                                     .multicombine = TRUE) %dorng% {
+                                       fit_single_snp(current_snp = current_snp,
+                                                      refvec = refvec,
+                                                      sizevec = sizevec,
+                                                      p1_ref = p1_ref,
+                                                      p1_size = p1_size,
+                                                      p2_ref = p2_ref,
+                                                      p2_size = p2_size)
+                                     }
+
+    if (is.null(retlist)) {
+      retlist <- chunk_result
+    } else {
+      retlist <- combine_flex(retlist, chunk_result)
+    }
+
+    completed_snps <- chunk_end
+    log_msg("Per-SNP fitting progress: ", completed_snps, "/", snp_total,
+            " SNPs completed (", sprintf("%.1f", 100 * completed_snps / snp_total),
+            "%) after ", sprintf("%.2f", proc.time()[["elapsed"]] - step_time), " sec.")
+  }
+
+  log_msg("Per-SNP flexdog fits completed in ", sprintf("%.2f", proc.time()[["elapsed"]] - step_time),
+          " sec for ", snp_total, " SNPs.")
 
   names(retlist) <- c("snpdf", "inddf")
   attr(retlist, "rng") <- NULL
   attr(retlist, "doRNG_version") <- NULL
   class(retlist) <- "multidog"
 
-  cat("done!")
+  log_msg("Done in ", sprintf("%.2f", proc.time()[["elapsed"]] - start_time), " sec.")
 
   return(retlist)
 }
